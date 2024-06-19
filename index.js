@@ -1,29 +1,83 @@
 const express = require("express");
+const dotenv = require("dotenv");
+const morgan = require("morgan");
+const db = require("./db");
+
+dotenv.config();
+
 const app = express();
-const bodyParser = require("body-parser");
+const port = process.env.PORT || 3000;
 
-app.use(bodyParser.json());
+app.use(express.json());
+app.use(morgan("dev"));
 
-require("dotenv/config");
+// Create Product table if it doesn't exist
+const createProductTable = async () => {
+  const queryText = `
+    CREATE TABLE IF NOT EXISTS products (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      price DECIMAL NOT NULL,
+      description TEXT NOT NULL,
+      stock INTEGER NOT NULL
+    );
+  `;
+  await db.query(queryText);
+};
 
-const api = process.env.API_URL;
+// Initialize database
+createProductTable().catch((err) =>
+  console.error("Error creating product table:", err)
+);
 
-app.get(`${api}/products`, (req, res) => {
-  const product = {
-    id: 1,
-    name: "hair dresser",
-    image: "some_url",
-  };
-  res.send(product);
+// CRUD operations
+app.get("/products", async (req, res) => {
+  try {
+    const result = await db.query("SELECT * FROM products");
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post(`${api}/products`, (req, res) => {
-  const newProduct = req.body;
-  console.log(newProduct);
-  res.send(newProduct);
+app.post("/products", async (req, res) => {
+  const { name, price, description, stock } = req.body;
+  try {
+    const result = await db.query(
+      "INSERT INTO products (name, price, description, stock) VALUES ($1, $2, $3, $4) RETURNING *",
+      [name, price, description, stock]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.listen(3000, () => {
-  console.log(api);
-  console.log("listening on port 3000");
+app.put("/products/:id", async (req, res) => {
+  const { id } = req.params;
+  const { name, price, description, stock } = req.body;
+  try {
+    const result = await db.query(
+      "UPDATE products SET name = $1, price = $2, description = $3, stock = $4 WHERE id = $5 RETURNING *",
+      [name, price, description, stock, id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/products/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    await db.query("DELETE FROM products WHERE id = $1", [id]);
+    res.sendStatus(204);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Start server
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
 });
